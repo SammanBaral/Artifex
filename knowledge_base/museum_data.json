@@ -1,0 +1,16 @@
+{
+    "museum_info": {
+        "name": "Grand Heritage Museum",
+        "location": "123 Museum Avenue, Historical City, Country",
+        "contact": "+123-456-7890",
+        "website": "www.grandheritagemuseum.com",
+        "opening_hours": "9AM - 5PM",
+        "ticket_prices": {
+            " Adults": 15,
+            "Seniors": 12,
+            "Students": 10
+        }
+    },
+    "galleries": {},
+    "artifacts": {}
+}

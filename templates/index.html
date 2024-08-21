@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Museum Assistant</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #status-container {
+            width: 80%;
+            max-width: 800px;
+        }
+        .status {
+            display: none;
+        }
+        .status.active {
+            display: block;
+        }
+        .status video {
+            width: 100%;
+            height: auto;
+        }
+        #response {
+            width: auto;
+            position: fixed;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 1.5em;
+            background-color: #2e15ec;
+            color:whitesmoke;
+            border: none; /* Box around the text */
+            margin: 0 20px; /* Add some horizontal margin */
+            font-family: 'Poppins', sans-serif;
+            border-radius:1.5rem;
+            font-weight: 700;
+            padding: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="status-container">
+        <div id="idle-status" class="status active">
+            <video src="static/AI_Robot_idle.mp4" autoplay loop muted></video>
+        </div>
+        <div id="transcribing-status" class="status">
+            <video src="static/AI_Robot_listening.mp4" autoplay loop muted></video>
+        </div>
+        <div id="error-status" class="status">
+            <video src="static/AI_Robot_error.mp4" autoplay loop muted></video>
+        </div>
+        <div id="speaking-status" class="status">
+            <video src="static/AI_Robot_speaking.mp4" autoplay loop muted></video>
+        </div>
+        <div id="processing-status" class="status">
+            <video src="static/AI_Robot_Loading.mp4" autoplay loop muted></video>
+        </div>
+    </div>
+    <div id="response"></div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        let conversationActive = false;
+
+        function startConversation() {
+            fetch('http://127.0.0.1:5000/start')
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data.message);
+                    document.getElementById('response').textContent = data.message;
+                    conversationActive = true;
+                    listenForQuestion();
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function listenForQuestion() {
+            if (!conversationActive) return;
+
+            fetch('http://127.0.0.1:5000/transcribe', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.transcription) {
+                    document.getElementById('response').textContent = data.transcription;
+                    processQuestion(data.transcription);
+                } else {
+                    setTimeout(listenForQuestion, 1000);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                setTimeout(listenForQuestion, 1000); 
+            });
+        }
+
+        function processQuestion(transcription) {
+            fetch('http://127.0.0.1:5000/ask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ question: transcription })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    document.getElementById('response').textContent = data.error;
+                } else {
+                    document.getElementById('response').textContent = data.answer;
+                }
+                setTimeout(askToContinue, 2000); 
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function askToContinue() {
+            fetch('http://127.0.0.1:5000/continue', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('response').textContent = data.message;
+                listenForContinueResponse();
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function listenForContinueResponse() {
+            fetch('http://127.0.0.1:5000/transcribe', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.transcription) {
+                    handleContinueResponse(data.transcription);
+                } else {
+                    setTimeout(listenForContinueResponse, 1000);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                setTimeout(listenForContinueResponse, 1000); 
+            });
+        }
+
+        function handleContinueResponse(response) {
+            fetch('http://127.0.0.1:5000/classify_intent', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ text: response })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.intent === "negative") {
+                    endConversation();
+                } else if (data.intent === "affirmative" || data.intent === "question") {
+                    listenForQuestion();
+                } else {
+                    document.getElementById('response').textContent = "I'm not sure if you want to continue. Could you please say 'yes' if you have more questions, or 'no' if you're done?";
+                    setTimeout(listenForContinueResponse, 2000);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        }
+
+        function endConversation() {
+            conversationActive = false;
+            document.getElementById('response').textContent = "Thank you for using the museum assistant. Goodbye!";
+            setTimeout(startConversation, 5000); 
+        }
+
+        function updateStatus() {
+             $.get('/status', function(data) {
+                 if (data.status !== 'error') { // Only update if not in error state
+                     $('.status').removeClass('active');
+                     if (data.status === 'idle') {
+                         $('#idle-status').addClass('active');
+                     } else if (data.status === 'transcribing') {
+                         $('#transcribing-status').addClass('active');
+                     } else if (data.status === 'speaking') {
+                         $('#speaking-status').addClass('active');
+                     } else if (data.status === 'processing') {
+                         $('#processing-status').addClass('active');
+                     }
+                 }
+             });
+         }
+
+        // Start the conversation when the page loads
+        document.addEventListener("DOMContentLoaded", startConversation);
+
+        // Continuously update status
+        setInterval(updateStatus, 500);
+    </script>
+</body>
+</html>
